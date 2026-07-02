@@ -1,4 +1,4 @@
-# bp-cap-fiori — Project Setup Guide
+Project Setup Guide
 
 ## What This Project Is
 
