@@ -202,6 +202,16 @@ Returned correct real data (9 total, 2 blocked, matching the seed data). Headles
 
 This also confirmed the `elicit: ['confirm']` safety gate works with a real client, not just curl: headless mode has no way to show an interactive confirmation dialog, so calling `block-business-partner` via `-p` correctly **declined and did not execute** — verified against the actual server state (`isBlocked: false` unchanged) rather than just trusting the reported outcome. To actually run a write tool through Claude Code, use an interactive `claude` session where the confirmation prompt can be approved.
 
+**Full verification results:**
+
+| Test | Result |
+|---|---|
+| Registration (`claude mcp add`) | Connected |
+| Tool discovery | All 6 tools found: `cap_describe_model`, `block-business-partner`, `unblock-business-partner`, `BPService_BusinessPartners_query`, `BPService_BusinessPartners_get`, `get-bp-summary` |
+| `get-bp-summary` | Correct data: 9 total, 7 active, 2 blocked, 4 persons, 4 orgs |
+| `BPService_BusinessPartners_query` (filtered) | Correctly returned the 2 known blocked BPs (Jane Smith, Apex Innovations) |
+| `elicit: ['confirm']` safety gate | Headless mode correctly declined to execute `block-business-partner` without an interactive confirmation prompt — verified against actual server state (still `ACTIVE`/`isBlocked: false`), not just trusted from the report |
+
 ---
 
 ## Running Locally
