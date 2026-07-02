@@ -286,6 +286,10 @@ Headless (`-p`) runs need `--allowedTools` listing the exact `mcp__<server>__<to
 
 If you see `this workspace has not been trusted`, either run `claude` interactively once in this directory and accept the trust dialog, or it'll just skip project-level `.claude/settings.json` permissions for that headless run (harmless for read-only testing, but `--allowedTools` still works regardless).
 
+### Manual curl Testing
+
+A bare `curl http://localhost:4004/mcp` (no credentials) returns `401 Unauthorized` with a `WWW-Authenticate: Bearer resource_metadata=...` header — this is `auth: "inherit"` working as intended, not a bug. `curl http://localhost:4004/mcp/health` deliberately skips auth and returns `{"status":"UP"}`, so it can be used as an unauthenticated liveness check without proving anything about the MCP protocol layer itself. `/mcp` is a JSON-RPC POST endpoint, not a browsable page — a `GET` with valid Basic Auth credentials still 404s; use the `claude mcp add`/`claude -p` flow above (or a JSON-RPC POST body) to actually exercise it.
+
 ---
 
 ## Seed Data (`db/data/`)
