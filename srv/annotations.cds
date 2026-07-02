@@ -105,16 +105,20 @@ annotate BPService.BusinessPartners with @(
   },
 
   // ── Object Page: header actions (bound actions shown as buttons) ─────────
+  // Available in both display and edit mode. The handler always updates the
+  // persisted active row and mirrors the change into any open draft, so the
+  // Status/Blocked fields on screen reflect the new value immediately
+  // (via Common.SideEffects on the action) even mid-edit.
   UI.Identification: [
     {
       $Type:  'UI.DataFieldForAction',
-      Action: 'BPService.EntityContainer/BusinessPartners_blockBP',
+      Action: 'BPService.blockBP',
       Label:  'Block BP',
       Inline: true
     },
     {
       $Type:  'UI.DataFieldForAction',
-      Action: 'BPService.EntityContainer/BusinessPartners_unblockBP',
+      Action: 'BPService.unblockBP',
       Label:  'Unblock BP',
       Inline: true
     }

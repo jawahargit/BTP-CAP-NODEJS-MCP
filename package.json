@@ -30,7 +30,7 @@
       "[development]": {
         "db": {
           "kind": "sqlite",
-          "credentials": { "url": ":memory:" }
+          "credentials": { "url": "db/dev.sqlite" }
         },
         "auth": {
           "kind": "mocked",

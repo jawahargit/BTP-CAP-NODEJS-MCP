@@ -23,7 +23,21 @@ service BPService @(requires: 'authenticated-user') {
     status.code    as statusCode,
     status.name    as statusName
   }
-  excluding { createdBy, modifiedBy };
+  excluding { createdBy, modifiedBy }
+  actions {
+    // ── Bound action: block a Business Partner ─────────────────────────────
+    // SideEffects tells the Fiori client to refetch the whole BP (incl. the
+    // computed statusCriticality) after a successful call, so the List
+    // Report / Object Page reflect the new status without a manual reload.
+    @(restrict: [{ grant: 'WRITE', to: ['BP_PROCESSOR','BP_ADMIN'] }])
+    @Common.SideEffects: { TargetEntities: ['_it'] }
+    action blockBP()   returns String;
+
+    // ── Bound action: unblock a Business Partner ───────────────────────────
+    @(restrict: [{ grant: 'WRITE', to: ['BP_ADMIN'] }])
+    @Common.SideEffects: { TargetEntities: ['_it'] }
+    action unblockBP() returns String;
+  };
 
   // ── Addresses (child — no separate draft, navigated from parent) ─────────
   @(restrict: [
@@ -49,14 +63,6 @@ service BPService @(requires: 'authenticated-user') {
   // ── Code lists (read-only — feed F4 value helps) ─────────────────────────
   @readonly entity BPCategories as projection on db.BPCategories;
   @readonly entity BPStatuses   as projection on db.BPStatuses;
-
-  // ── Bound action: block a Business Partner ───────────────────────────────
-  @(restrict: [{ grant: 'WRITE', to: ['BP_PROCESSOR','BP_ADMIN'] }])
-  action blockBP()   returns String;
-
-  // ── Bound action: unblock a Business Partner ────────────────────────────
-  @(restrict: [{ grant: 'WRITE', to: ['BP_ADMIN'] }])
-  action unblockBP() returns String;
 
   // ── Unbound function: summary counts ─────────────────────────────────────
   @readonly

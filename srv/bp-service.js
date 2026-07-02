@@ -13,7 +13,7 @@ const LOG = cds.log('bp-service');
 module.exports = class BPService extends cds.ApplicationService {
 
   async init() {
-    const { BusinessPartners, BPAddresses, BPRoles, BPTaxNumbers } = this.entities;
+    const { BusinessPartners, BPAddresses, BPRoles, BPTaxNumbers, BPStatuses } = this.entities;
 
     // ════════════════════════════════════════════════════════════════════════
     // BEFORE CREATE — validation + fullName computation
@@ -106,49 +106,46 @@ module.exports = class BPService extends cds.ApplicationService {
     });
 
     // ════════════════════════════════════════════════════════════════════════
-    // ON blockBP — bound action: set isBlocked = true
+    // ON blockBP / unblockBP — bound actions: flip isBlocked + status.
+    // Registered for both the active entity AND the drafts shadow entity, so
+    // the buttons work whether invoked while viewing or while editing a BP.
+    // We always update the persisted ACTIVE row, and mirror the result into
+    // any open draft too — otherwise a later Save would overwrite the active
+    // row with the draft's stale fields and silently undo the change.
+    //
+    // The drafts table materializes categoryCode/categoryName/statusCode/
+    // statusName as flat columns (unlike the active entity, where they're a
+    // live SQL view via the category/status associations) — so on the draft
+    // we must patch those denormalized columns explicitly, or the edit-mode
+    // form would keep showing the old status text after the action runs.
     // ════════════════════════════════════════════════════════════════════════
-    this.on('blockBP', BusinessPartners, async (req) => {
-      const id = req.params[0];   // UUID from OData key
-
-      // Guard: check current state first
-      const bp = await SELECT.one
-        .from(BusinessPartners, id)
-        .columns('isBlocked', 'fullName', 'bpNumber');
-
-      if (!bp) return req.error(404, `Business Partner not found.`);
-      if (bp.isBlocked) return `Business Partner ${bp.bpNumber} is already blocked.`;
-
-      await UPDATE(BusinessPartners, id).with({
-        isBlocked:   true,
-        status_code: 'BLOCKED'
-      });
-
-      LOG.info(`BP ${bp.bpNumber} blocked by ${req.user.id}`);
-      return `Business Partner ${bp.bpNumber} (${bp.fullName}) has been blocked.`;
-    });
-
-    // ════════════════════════════════════════════════════════════════════════
-    // ON unblockBP — bound action: set isBlocked = false (BP_ADMIN only)
-    // ════════════════════════════════════════════════════════════════════════
-    this.on('unblockBP', BusinessPartners, async (req) => {
-      const id = req.params[0];
+    const blockHandler = (toBlocked) => async (req) => {
+      const id = req.params[0]?.ID ?? req.params[0];
 
       const bp = await SELECT.one
         .from(BusinessPartners, id)
         .columns('isBlocked', 'fullName', 'bpNumber');
 
       if (!bp) return req.error(404, `Business Partner not found.`);
-      if (!bp.isBlocked) return `Business Partner ${bp.bpNumber} is already active.`;
+      if (bp.isBlocked === toBlocked) {
+        return `Business Partner ${bp.bpNumber} is already ${toBlocked ? 'blocked' : 'active'}.`;
+      }
 
-      await UPDATE(BusinessPartners, id).with({
-        isBlocked:   false,
-        status_code: 'ACTIVE'
-      });
+      const status_code = toBlocked ? 'BLOCKED' : 'ACTIVE';
+      const status = await SELECT.one.from(BPStatuses, status_code).columns('name');
 
-      LOG.info(`BP ${bp.bpNumber} unblocked by ${req.user.id}`);
-      return `Business Partner ${bp.bpNumber} (${bp.fullName}) has been unblocked.`;
-    });
+      const activePatch = { isBlocked: toBlocked, status_code };
+      const draftPatch   = { ...activePatch, statusCode: status_code, statusName: status?.name };
+
+      await UPDATE(BusinessPartners, id).with(activePatch);
+      await UPDATE(BusinessPartners.drafts, id).with(draftPatch);
+
+      LOG.info(`BP ${bp.bpNumber} ${toBlocked ? 'blocked' : 'unblocked'} by ${req.user.id}`);
+      return `Business Partner ${bp.bpNumber} (${bp.fullName}) has been ${toBlocked ? 'blocked' : 'unblocked'}.`;
+    };
+
+    this.on('blockBP',   [BusinessPartners, BusinessPartners.drafts], blockHandler(true));
+    this.on('unblockBP', [BusinessPartners, BusinessPartners.drafts], blockHandler(false));
 
     // ════════════════════════════════════════════════════════════════════════
     // ON getBPSummary — unbound function: aggregate counts
