@@ -13,10 +13,11 @@ bp-cap-fiori/
 │
 ├── db/
 │   ├── schema.cds                              ← All entities (BusinessPartners, Addresses, Roles, Tax, CodeLists)
+│   ├── dev.sqlite                              ← Local dev DB file (gitignored, auto-created — see below)
 │   └── data/
 │       ├── com.bp.manager-BPCategories.csv     ← Seed: Person / Organisation / Group
 │       ├── com.bp.manager-BPStatuses.csv       ← Seed: ACTIVE / BLOCKED
-│       └── com.bp.manager-BusinessPartners.csv ← 7 sample Business Partners
+│       └── com.bp.manager-BusinessPartners.csv ← 9 sample Business Partners
 │
 ├── srv/
 │   ├── bp-service.cds   ← Service definition, projections, @restrict, actions
@@ -67,11 +68,11 @@ Moved each file into its correct location per CAP conventions:
 | `mta.yaml` | *(root — unchanged)* |
 
 ### Step 3 — Create CSV Seed Data
-Created `db/data/` with three CSV files that CAP auto-loads on `cds watch`:
+Created `db/data/` with three CSV files loaded by `cds deploy` the first time `db/dev.sqlite` is created:
 
 - **BPCategories**: `1=Person`, `2=Organisation`, `3=Group`
 - **BPStatuses**: `ACTIVE`, `BLOCKED`
-- **BusinessPartners**: 7 sample records (mix of persons, orgs, one blocked)
+- **BusinessPartners**: 9 sample records (mix of persons, orgs, groups; 2 blocked)
 
 ### Step 4 — Fix npm Dependencies (CDS 7 → 8)
 Updated `package.json` to resolve deprecation warnings and engine mismatch:
@@ -126,7 +127,33 @@ country : Country;
 [cds] - server listening on { url: 'http://localhost:4004' }
 ```
 
-All tables created in SQLite in-memory, all CSV seed data loaded.
+All tables created in `db/dev.sqlite`, all CSV seed data loaded.
+
+### Step 7 — Persistent Dev Database
+
+Switched the dev DB from `:memory:` to a file at `db/dev.sqlite`, because in-memory SQLite resets on every `cds watch` restart (which happens automatically on every file save) — wiping out any Block/Unblock changes made through the UI mid-session.
+
+`cds watch` doesn't auto-seed a file-based DB the way it does `:memory:`, so `package.json` gained a `predev` hook that runs before `npm run dev`:
+
+```json
+"predev": "test -f db/dev.sqlite || npx cds deploy",
+"dev":    "cds watch"
+```
+
+This deploys the schema and loads the CSVs **only if `db/dev.sqlite` doesn't exist yet** — a fresh clone works out of the box, and an existing local DB (with your test data) is left untouched on every subsequent restart.
+
+`db/dev.sqlite*` is gitignored (covers the `-wal`/`-shm` sidecar files SQLite creates too) — it's never committed. To reset to pristine seed data: `rm -f db/dev.sqlite* && npm run dev`.
+
+### Step 8 — Fix Block/Unblock Actions
+
+`blockBP`/`unblockBP` were originally declared at the service level in `bp-service.cds`, which CDS compiles as *unbound* actions (`ActionImport`s with no entity key context) — the Object Page buttons couldn't target a specific record. Moved them inside `BusinessPartners`' `actions { }` block so they compile as bound actions (`IsBound="true"`).
+
+Two follow-on issues, both fixed:
+
+- **Draft context**: invoking the action while a record is being edited (`IsActiveEntity=false`) routed to the `BusinessPartners.drafts` shadow entity, which had no handler (`501`). The handler is now registered for `[BusinessPartners, BusinessPartners.drafts]`, always updates the persisted active row, and mirrors the change into the draft (including the drafts table's materialized `statusCode`/`statusName` columns, which are flat copies, not a live view) so the edit-mode form reflects the new value immediately and a later Save doesn't revert it.
+- **Stale UI annotation**: `annotations.cds` still referenced the action as `BPService.EntityContainer/BusinessPartners_blockBP` (the unbound `ActionImport` path) after the action became bound. UI5 fails this silently client-side (`Unknown action import`) — the button looks clickable but no OData request ever fires. Fixed to the plain bound-action qualified name: `BPService.blockBP`.
+
+Also added `@Common.SideEffects: { TargetEntities: ['_it'] }` on both actions so a Fiori client refetches the whole BP (incl. the virtual `statusCriticality`) after a successful call, instead of showing stale cached values.
 
 ---
 
@@ -134,7 +161,7 @@ All tables created in SQLite in-memory, all CSV seed data loaded.
 
 ```bash
 npm install
-npm run dev        # starts cds watch on http://localhost:4004
+npm run dev        # auto-provisions db/dev.sqlite on first run, then starts cds watch on http://localhost:4004
 ```
 
 ---
@@ -171,16 +198,18 @@ curl -u "admin@test.com:x" http://localhost:4004/api/v1/bp/BusinessPartners
 # Summary counts
 curl -u "admin@test.com:x" "http://localhost:4004/api/v1/bp/getBPSummary()"
 
-# Block a BP
+# Block a BP — draft-enabled entities need the compound key incl. IsActiveEntity
 curl -u "processor@test.com:x" -X POST \
-  "http://localhost:4004/api/v1/bp/BusinessPartners({ID})/BPService.blockBP" \
+  "http://localhost:4004/api/v1/bp/BusinessPartners(ID={ID},IsActiveEntity=true)/BPService.blockBP" \
   -H "Content-Type: application/json" -d "{}"
 
 # Unblock a BP (admin only)
 curl -u "admin@test.com:x" -X POST \
-  "http://localhost:4004/api/v1/bp/BusinessPartners({ID})/BPService.unblockBP" \
+  "http://localhost:4004/api/v1/bp/BusinessPartners(ID={ID},IsActiveEntity=true)/BPService.unblockBP" \
   -H "Content-Type: application/json" -d "{}"
 ```
+
+`blockBP`/`unblockBP` are bound actions on `BusinessPartners` (declared inside the entity's `actions { }` block in `bp-service.cds`, not at service level) — referenced in `UI.Identification` by qualified name `BPService.blockBP`, not an `EntityContainer/...` ActionImport path. They also work when invoked against an open draft (`IsActiveEntity=false`), e.g. from the Object Page in edit mode: the handler always updates the persisted active row and mirrors the change into the draft, so Status/Blocked reflect immediately on screen and a later Save doesn't revert it.
 
 ---
 
