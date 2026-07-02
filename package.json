@@ -1,0 +1,54 @@
+{
+  "name": "bp-cap-fiori",
+  "version": "1.0.0",
+  "description": "Business Partner CAP Application with Fiori Elements UI",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "start":   "cds-serve",
+    "dev":     "cds watch",
+    "build":   "cds build --production",
+    "deploy":  "mbt build -p cf && cf deploy mta_archives/bp-cap-fiori_1.0.0.mtar --retries 1",
+    "lint":    "eslint srv/"
+  },
+  "dependencies": {
+    "@sap/cds":          "^8.0.0",
+    "@sap/cds-fiori":    "^1.2.0",
+    "@sap/xssec":        "^3.6.0",
+    "passport":          "^0.7.0",
+    "hdb":               "^0.19.0",
+    "@sap/hana-client":  "^2.19.0",
+    "express":           "^4.19.0"
+  },
+  "devDependencies": {
+    "@sap/ux-specification":    "~1.120.0",
+    "@sap/cds-dk":              "^8.0.0",
+    "@cap-js/sqlite":           "^1.7.0",
+    "eslint":                   "^8.57.0"
+  },
+  "cds": {
+    "requires": {
+      "[development]": {
+        "db": {
+          "kind": "sqlite",
+          "credentials": { "url": ":memory:" }
+        },
+        "auth": {
+          "kind": "mocked",
+          "users": {
+            "viewer@test.com":    { "roles": ["BP_VIEWER"] },
+            "processor@test.com": { "roles": ["BP_PROCESSOR"] },
+            "admin@test.com":     { "roles": ["BP_ADMIN"] }
+          }
+        }
+      },
+      "[production]": {
+        "db":   { "kind": "hana-cloud" },
+        "auth": { "kind": "xsuaa" }
+      }
+    },
+    "hana":  { "deploy-format": "hdbtable" },
+    "i18n":  { "default_language": "en" },
+    "log":   { "levels": { "sql": "debug" } },
+    "server": { "shutdown-timeout": 15000 }
+  }
+}

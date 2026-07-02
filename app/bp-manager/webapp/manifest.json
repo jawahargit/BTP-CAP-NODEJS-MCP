@@ -1,0 +1,150 @@
+{
+  "_version": "1.65.0",
+  "sap.app": {
+    "id": "com.bp.manager.bpmanager",
+    "type": "application",
+    "title": "{{appTitle}}",
+    "description": "{{appDescription}}",
+    "applicationVersion": { "version": "1.0.0" },
+    "dataSources": {
+      "mainService": {
+        "uri": "/api/v1/bp/",
+        "type": "OData",
+        "settings": {
+          "annotations": ["annotation"],
+          "odataVersion": "4.0",
+          "localUri": "localService/metadata.xml"
+        }
+      },
+      "annotation": {
+        "uri": "localService/annotation.xml",
+        "type": "ODataAnnotation"
+      }
+    },
+    "offline": false,
+    "sourceTemplate": {
+      "id": "ui5template.ListReportPage",
+      "version": "1.0.0"
+    }
+  },
+  "sap.ui": {
+    "technology": "UI5",
+    "icons": {
+      "icon": "sap-icon://business-partner"
+    },
+    "deviceTypes": {
+      "desktop": true,
+      "tablet":  true,
+      "phone":   false
+    }
+  },
+  "sap.fiori": {
+    "registrationIds": ["F0001"],
+    "archeType": "transactional"
+  },
+  "sap.ui5": {
+    "flexEnabled": true,
+    "dependencies": {
+      "minUI5Version": "1.120.0",
+      "libs": {
+        "sap.m":                 {},
+        "sap.ui.core":           {},
+        "sap.fe.templates":      {},
+        "sap.fe.core":           {},
+        "sap.ui.layout":         {},
+        "sap.ui.table":          {}
+      }
+    },
+    "contentDensities": {
+      "compact": true,
+      "cozy":    false
+    },
+    "models": {
+      "": {
+        "dataSource": "mainService",
+        "preload": true,
+        "settings": {
+          "synchronizationMode": "None",
+          "operationMode": "Server",
+          "autoExpandSelect": true,
+          "earlyRequests": true
+        }
+      },
+      "i18n": {
+        "type": "sap.ui.model.resource.ResourceModel",
+        "settings": {
+          "bundleName": "com.bp.manager.bpmanager.i18n.i18n"
+        }
+      }
+    },
+    "routing": {
+      "routes": [
+        {
+          "name":    "BPManagerList",
+          "pattern": "",
+          "target":  "BPManagerList"
+        },
+        {
+          "name":    "BPManagerObjectPage",
+          "pattern": "BusinessPartners({key})",
+          "target":  "BPManagerObjectPage"
+        },
+        {
+          "name":    "BPManagerObjectPageAddresses",
+          "pattern": "BusinessPartners({key})/addresses({addressKey})",
+          "target":  "BPManagerObjectPageAddresses"
+        }
+      ],
+      "targets": {
+        "BPManagerList": {
+          "type":         "Component",
+          "id":           "BPManagerList",
+          "name":         "sap.fe.templates.ListReport",
+          "options": {
+            "settings": {
+              "entitySet":          "BusinessPartners",
+              "variantManagement":  "Page",
+              "initialLoad":        true,
+              "controlConfiguration": {
+                "@com.sap.vocabularies.UI.v1.LineItem": {
+                  "tableSettings": {
+                    "type":        "ResponsiveTable",
+                    "selectionMode": "Multi",
+                    "enableExport": true
+                  }
+                }
+              }
+            }
+          }
+        },
+        "BPManagerObjectPage": {
+          "type": "Component",
+          "id":   "BPManagerObjectPage",
+          "name": "sap.fe.templates.ObjectPage",
+          "options": {
+            "settings": {
+              "entitySet":    "BusinessPartners",
+              "editableHeaderContent": false,
+              "sectionLayout": "Tabs"
+            }
+          }
+        },
+        "BPManagerObjectPageAddresses": {
+          "type": "Component",
+          "id":   "BPManagerObjectPageAddresses",
+          "name": "sap.fe.templates.ObjectPage",
+          "options": {
+            "settings": {
+              "entitySet":    "BPAddresses",
+              "navigation": {
+                "BPAddresses": {
+                  "detail": { "route": "BPManagerObjectPageAddresses" }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

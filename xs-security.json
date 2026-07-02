@@ -1,0 +1,49 @@
+{
+  "xsappname": "bp-cap-fiori",
+  "tenant-mode": "dedicated",
+  "description": "Business Partner CAP Application — XSUAA Security Descriptor",
+  "oauth2-configuration": {
+    "redirect-uris": ["https://*.cfapps.eu10.hana.ondemand.com/**"],
+    "token-validity": 43200
+  },
+  "scopes": [
+    { "name": "$XSAPPNAME.BP_READ",      "description": "Read Business Partners" },
+    { "name": "$XSAPPNAME.BP_WRITE",     "description": "Create and update Business Partners" },
+    { "name": "$XSAPPNAME.BP_BLOCK",     "description": "Block Business Partners" },
+    { "name": "$XSAPPNAME.BP_ADMIN",     "description": "Full administrative access including unblock" }
+  ],
+  "role-templates": [
+    {
+      "name": "BP_VIEWER",
+      "description": "Read-only access to Business Partners",
+      "scope-references": ["$XSAPPNAME.BP_READ"]
+    },
+    {
+      "name": "BP_PROCESSOR",
+      "description": "Create, update and block Business Partners",
+      "scope-references": ["$XSAPPNAME.BP_READ", "$XSAPPNAME.BP_WRITE", "$XSAPPNAME.BP_BLOCK"]
+    },
+    {
+      "name": "BP_ADMIN",
+      "description": "Full access including unblock",
+      "scope-references": ["$XSAPPNAME.BP_READ", "$XSAPPNAME.BP_WRITE", "$XSAPPNAME.BP_BLOCK", "$XSAPPNAME.BP_ADMIN"]
+    }
+  ],
+  "role-collections": [
+    {
+      "name": "BP Manager Viewer",
+      "description": "View Business Partners",
+      "role-template-references": ["$XSAPPNAME.BP_VIEWER"]
+    },
+    {
+      "name": "BP Manager Processor",
+      "description": "Create, update and block Business Partners",
+      "role-template-references": ["$XSAPPNAME.BP_PROCESSOR"]
+    },
+    {
+      "name": "BP Manager Admin",
+      "description": "Full administrative access",
+      "role-template-references": ["$XSAPPNAME.BP_ADMIN"]
+    }
+  ]
+}
