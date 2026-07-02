@@ -5,6 +5,7 @@
   "engines": { "node": ">=20" },
   "scripts": {
     "start":   "cds-serve",
+    "predev":  "test -f db/dev.sqlite || npx cds deploy",
     "dev":     "cds watch",
     "build":   "cds build --production",
     "deploy":  "mbt build -p cf && cf deploy mta_archives/bp-cap-fiori_1.0.0.mtar --retries 1",
