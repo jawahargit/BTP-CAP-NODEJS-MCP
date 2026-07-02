@@ -181,6 +181,27 @@ nvm install   # reads .nvmrc
 nvm use
 ```
 
+### Step 10 — Verify MCP with the Claude Code CLI
+
+Registered the local server and confirmed it end-to-end with a real Claude Code process (not just curl):
+
+```bash
+claude mcp add --transport http bp-manager http://localhost:4004/mcp \
+  --header "Authorization: Basic $(echo -n 'admin@test.com:x' | base64)"
+claude mcp get bp-manager   # should show Status: ✔ Connected
+```
+
+A newly-registered server isn't hot-loaded into an already-running Claude Code session — tool discovery happens at session start. Verified with a fresh headless process instead:
+
+```bash
+claude -p "Using the bp-manager MCP server, get the Business Partner summary counts." \
+  --allowedTools "mcp__bp-manager__get-bp-summary"
+```
+
+Returned correct real data (9 total, 2 blocked, matching the seed data). Headless runs need `--allowedTools` listing exact `mcp__<server>__<tool>` names to get non-interactive permission approval.
+
+This also confirmed the `elicit: ['confirm']` safety gate works with a real client, not just curl: headless mode has no way to show an interactive confirmation dialog, so calling `block-business-partner` via `-p` correctly **declined and did not execute** — verified against the actual server state (`isBlocked: false` unchanged) rather than just trusting the reported outcome. To actually run a write tool through Claude Code, use an interactive `claude` session where the confirmation prompt can be approved.
+
 ---
 
 ## Running Locally

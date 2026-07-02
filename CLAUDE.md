@@ -264,6 +264,28 @@ Field-level `@mcp.hint` annotations on `BusinessPartners` explain the coded valu
 
 Annotating a bound action (declared inside an entity's `actions { }` block) from an external file needs `annotate <Entity> with actions { <action> @(...); };` — **not** `annotate <Entity>.actions { ... }`, which silently fails: it compiles without error but produces an `ext-undefined-def` warning and the annotation never merges into the actual action definition. Verify with `npx cds compile srv --to json` and check the annotation appears on the actual `actions.<name>` object, not just as an orphaned entry under `"extensions"`.
 
+### Testing with the Claude Code CLI
+
+Register the running dev server as a local MCP server (HTTP transport + Basic Auth header, since dev auth is mocked and doesn't do OAuth):
+
+```bash
+claude mcp add --transport http bp-manager http://localhost:4004/mcp \
+  --header "Authorization: Basic $(echo -n 'admin@test.com:x' | base64)"
+```
+
+Verify: `claude mcp get bp-manager` (should show `Status: ✔ Connected`). Swap the base64'd credentials to test as `viewer@test.com`/`processor@test.com` and confirm RBAC — a viewer's `tools/list` won't even include `block-business-partner`/`unblock-business-partner`.
+
+**A newly-registered MCP server is not hot-loaded into an already-running Claude Code session** — tool discovery happens at session start. To test without disrupting an active session, spawn a fresh headless process instead:
+
+```bash
+claude -p "Using the bp-manager MCP server, get the Business Partner summary counts." \
+  --allowedTools "mcp__bp-manager__get-bp-summary"
+```
+
+Headless (`-p`) runs need `--allowedTools` listing the exact `mcp__<server>__<tool>` names — otherwise it can't get permission approval non-interactively. This is also directly relevant to `elicit: ['confirm']`: headless mode has no way to show an interactive confirmation dialog, so calling `block-business-partner`/`unblock-business-partner` via `-p` **correctly declines and does not execute**, rather than silently auto-confirming. To actually exercise a write tool end-to-end, use an **interactive** `claude` session, where the confirmation prompt can be shown and approved.
+
+If you see `this workspace has not been trusted`, either run `claude` interactively once in this directory and accept the trust dialog, or it'll just skip project-level `.claude/settings.json` permissions for that headless run (harmless for read-only testing, but `--allowedTools` still works regardless).
+
 ---
 
 ## Seed Data (`db/data/`)
