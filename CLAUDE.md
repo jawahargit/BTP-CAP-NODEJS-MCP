@@ -28,6 +28,7 @@ btp_cap_nodejs_mcp/
 │   ├── bp-service.cds           # OData V4 service definition + auth restrictions
 │   ├── bp-service.js            # Node.js service handler (all business logic)
 │   ├── annotations.cds          # Fiori Elements UI annotations
+│   ├── mcp.cds                  # MCP (Model Context Protocol) annotations — @gavdi/cap-mcp
 │   └── server.js                # Custom Express bootstrap (adds /health endpoint)
 │
 ├── app/
@@ -37,6 +38,7 @@ btp_cap_nodejs_mcp/
 ├── xs-security.json             # XSUAA security descriptor (scopes, role templates, role collections)
 ├── mta.yaml                     # Multi-Target Application descriptor for CF deployment
 ├── package.json                 # npm scripts, CDS config, dependencies
+├── .nvmrc                       # Pins Node LTS via nvm — see Toolchain / Node Version below
 └── CLAUDE.md                    # This file
 ```
 
@@ -64,6 +66,21 @@ Local test users (HTTP Basic, any password accepted):
 
 ---
 
+## Toolchain / Node Version
+
+CDS 9's dependency chain (specifically the native `better-sqlite3` module pulled in by `@cap-js/sqlite@2.x`) needs a current Node LTS — an older Node has no prebuilt binary for it and the source-compile fallback fails (`node-gyp` needs Python's `distutils`, removed in Python 3.12+).
+
+Managed via `nvm`, scoped to this project only (`.nvmrc` → `lts/*`) — it does **not** touch any system-wide/global Node install:
+
+```bash
+nvm install   # reads .nvmrc
+nvm use       # switches this shell to the pinned version
+```
+
+Run `nvm use` (or let a `.nvmrc`-aware shell hook do it automatically) before `npm install` or `npm run dev` in a fresh terminal.
+
+---
+
 ## Local Dev Database
 
 Dev uses file-based SQLite at `db/dev.sqlite` (switched from `:memory:` so changes made through the UI — e.g. Block/Unblock — survive a `cds watch` restart, which happens automatically on every file save).
@@ -85,6 +102,8 @@ npm run dev   # predev detects the missing file and reseeds from db/data/*.csv
 
 `db/dev.sqlite*` is gitignored — never commit it.
 
+**After a major `@sap/cds` version bump**, delete and redeploy the dev DB even if it already exists. CAP's own draft/system tables can gain columns between major versions (e.g. CDS 9 added `DraftMessages` to `DraftAdministrativeData`) — an old DB file will fail with `no such column` errors on draft operations until it's redeployed against the current model: `rm -f db/dev.sqlite* && npx cds deploy`.
+
 ---
 
 ## Architecture
@@ -95,10 +114,11 @@ npm run dev   # predev detects the missing file and reseeds from db/data/*.csv
 |---|---|
 | UI | SAP Fiori Elements (List Report + Object Page, OData V4) |
 | Routing | SAP Approuter (`@sap/approuter`) |
-| Service | SAP CAP Node.js (`@sap/cds` ^8) |
+| Service | SAP CAP Node.js (`@sap/cds` ^9), Express 5 |
+| AI Access | MCP server (`@gavdi/cap-mcp`) at `/mcp` — see **MCP Server** below |
 | Auth (dev) | CAP mocked auth (HTTP Basic) |
-| Auth (prod) | XSUAA (`@sap/xssec` + `passport`) |
-| DB (dev) | SQLite, file-based at `db/dev.sqlite` (`@cap-js/sqlite`) — persists across restarts |
+| Auth (prod) | XSUAA (`@sap/xssec` ^4 + `passport`) |
+| DB (dev) | SQLite, file-based at `db/dev.sqlite` (`@cap-js/sqlite` ^2) — persists across restarts |
 | DB (prod) | SAP HANA Cloud (HDI container, `hdb` / `@sap/hana-client`) |
 | Hosting | SAP BTP Cloud Foundry (EU10 region) |
 
@@ -219,6 +239,33 @@ Both use `Common.ValueListWithFixedValues: true` so the input renders as a dropd
 
 ---
 
+## MCP Server (`srv/mcp.cds`)
+
+Exposes `BPService` to MCP-compatible AI agents (e.g. Claude Desktop) via the [`@gavdi/cap-mcp`](https://github.com/gavdilabs/cap-mcp-plugin) plugin. Endpoint: `http://localhost:4004/mcp` (health at `/mcp/health`).
+
+Configured in `package.json` under `cds.mcp`:
+- `name`: `bp-manager-mcp`
+- `auth: "inherit"` — MCP requests authenticate exactly like OData requests (HTTP Basic in dev, XSUAA/JWT in prod) and inherit the same `@restrict` role checks. A tool that a role has no grant for isn't just rejected — it's filtered out of `tools/list` entirely for that user, so it never shows up as available in the first place.
+
+`@mcp` annotations live in their own file, `srv/mcp.cds`, mirroring how `annotations.cds` isolates `@UI` concerns — never add `@mcp` annotations to `bp-service.cds`.
+
+What's exposed:
+
+| Artifact | MCP form | Notes |
+|---|---|---|
+| `BusinessPartners` | Resource template (`filter`,`orderby`,`select`,`top`,`skip`,`expand`) + `query`/`get` wrapper tools | Deliberately **not** wrapped for `create`/`update` — it's draft-enabled with a multi-step Fiori edit flow; creates/updates should go through the UI, not a raw tool call |
+| `BPCategories` / `BPStatuses` | Static resources (`resource: []`) | Small code lists, no query params needed |
+| `blockBP` / `unblockBP` | Tools (`block-business-partner` / `unblock-business-partner`) | `elicit: ['confirm']` — the plugin requires the calling MCP client to support confirmation elicitation and refuses to execute otherwise (`Client does not support form elicitation`), rather than silently skipping the confirmation step |
+| `getBPSummary` | Tool (`get-bp-summary`) | Read-only, no elicitation |
+
+Field-level `@mcp.hint` annotations on `BusinessPartners` explain the coded values (`categoryCode` 1/2/3, `statusCode` ACTIVE/BLOCKED) an LLM agent can't infer from the field name alone, and steer agents toward the block/unblock tools instead of writing `isBlocked` directly.
+
+### Bound-Action Annotation Syntax Gotcha
+
+Annotating a bound action (declared inside an entity's `actions { }` block) from an external file needs `annotate <Entity> with actions { <action> @(...); };` — **not** `annotate <Entity>.actions { ... }`, which silently fails: it compiles without error but produces an `ext-undefined-def` warning and the annotation never merges into the actual action definition. Verify with `npx cds compile srv --to json` and check the annotation appears on the actual `actions.<name>` object, not just as an orphaned entry under `"extensions"`.
+
+---
+
 ## Seed Data (`db/data/`)
 
 Loaded by `cds deploy` into `db/dev.sqlite` — only on first run (see **Local Dev Database**), not on every `cds watch` start. File names must exactly match the fully-qualified entity name.
@@ -313,6 +360,20 @@ After importing `sap.common.CodeList` this way, reference it as just `CodeList` 
 
 ---
 
+## CDS 9 / Express 5 Upgrade Gotcha
+
+CDS 9 requires Express 5 (needed to satisfy `@gavdi/cap-mcp`'s peer dependency). `@sap/cds-fiori@1.x` predates Express 5 support: it builds Fiori-preview mock routes with a bare `'*'` wildcard (`path.join(appPath, dataSourceUri, '*')`), which Express 4's `path-to-regexp` accepted but Express 5's rejects outright at server startup:
+
+```
+PathError [TypeError]: Missing parameter name at index 48: /bp-manager/webapp/localService/annotation.xml/*
+```
+
+Fixed by requiring `@sap/cds-fiori@^2.3.0`, which detects the Express major version and uses `*splat` instead of bare `*` when running on Express 5. If you ever see this error again after touching CAP-related deps, check `@sap/cds-fiori`'s version first — it's not something in this project's own code.
+
+Also required: `@cap-js/sqlite` bumped 1→2 (the 1.x line depends on a `@cap-js/db-service` that peer-caps `@sap/cds` at `<9`), `@sap/xssec` 3→4, and `eslint` 8→10 (a peer of CDS 9's bundled `@eslint/js`). See **Toolchain / Node Version** above for the Node-side fallout of this chain.
+
+---
+
 ## Key Design Decisions
 
 - **`fullName` is stored, not computed in SQL** — avoids DB-specific computed column syntax and keeps the value readable in raw DB queries. The handler writes it on every CREATE/UPDATE.
@@ -322,3 +383,6 @@ After importing `sap.common.CodeList` this way, reference it as just `CodeList` 
 - **Pagination guard is always on** — the `BEFORE READ` hook silently caps `$top` at 500 to protect against accidental full-table scans in production HANA.
 - **Dev DB is a persistent file, auto-provisioned only when missing** — `:memory:` reset on every `cds watch` restart (which fires on every file save), destroying any Block/Unblock or other test data mid-session. File-based `db/dev.sqlite` plus a `predev` guard (`test -f db/dev.sqlite || npx cds deploy`) gives persistence across restarts while still working out of the box on a fresh clone.
 - **`blockBP`/`unblockBP` must be bound actions, registered for both the active entity and `.drafts`** — declaring them at the service level compiles to unbound `ActionImport`s that Fiori Elements object-page buttons can't target a specific record with; registering the handler only against the active entity leaves the action broken (`501`) whenever it's invoked while a draft is open.
+- **MCP annotations are isolated in `mcp.cds`, same reasoning as `annotations.cds`** — keeps `bp-service.cds` free of a third annotation domain and makes it obvious where to look for AI-facing exposure config.
+- **MCP writes (`blockBP`/`unblockBP`) require client-side confirmation (`elicit: ['confirm']`)** — these mutate business state; requiring the calling agent to explicitly confirm before executing is a deliberate safety choice, not a default we should relax to make testing more convenient.
+- **`nvm` + `.nvmrc` instead of upgrading the system-wide Node** — this project's toolchain now needs a newer Node than may be installed globally; scoping the upgrade via `nvm` avoids affecting other projects/tools on the same machine.

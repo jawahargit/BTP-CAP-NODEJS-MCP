@@ -12,19 +12,20 @@
     "lint":    "eslint srv/"
   },
   "dependencies": {
-    "@sap/cds":          "^8.0.0",
-    "@sap/cds-fiori":    "^1.2.0",
-    "@sap/xssec":        "^3.6.0",
+    "@sap/cds":          "^9.0.0",
+    "@sap/cds-fiori":    "^2.3.0",
+    "@sap/xssec":        "^4.9.1",
     "passport":          "^0.7.0",
     "hdb":               "^0.19.0",
     "@sap/hana-client":  "^2.19.0",
-    "express":           "^4.19.0"
+    "express":           "^5.0.0",
+    "@gavdi/cap-mcp":    "^1.7.0"
   },
   "devDependencies": {
     "@sap/ux-specification":    "~1.120.0",
-    "@sap/cds-dk":              "^8.0.0",
-    "@cap-js/sqlite":           "^1.7.0",
-    "eslint":                   "^8.57.0"
+    "@sap/cds-dk":              "^9.0.0",
+    "@cap-js/sqlite":           "^2.4.0",
+    "eslint":                   "^10.0.0"
   },
   "cds": {
     "requires": {
@@ -50,6 +51,11 @@
     "hana":  { "deploy-format": "hdbtable" },
     "i18n":  { "default_language": "en" },
     "log":   { "levels": { "sql": "debug" } },
-    "server": { "shutdown-timeout": 15000 }
+    "server": { "shutdown-timeout": 15000 },
+    "mcp": {
+      "name": "bp-manager-mcp",
+      "auth": "inherit",
+      "instructions": "MCP server for the Business Partner Manager. Exposes Business Partners (persons, organisations, groups) as a queryable resource, plus tools to block/unblock a Business Partner and get aggregate summary counts. Access is governed by the same role-based access control as the OData service: BP_VIEWER (read), BP_PROCESSOR (read + write + block), BP_ADMIN (full access including unblock)."
+    }
   }
 }

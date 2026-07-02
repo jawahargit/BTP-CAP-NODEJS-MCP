@@ -22,6 +22,7 @@ bp-cap-fiori/
 ├── srv/
 │   ├── bp-service.cds   ← Service definition, projections, @restrict, actions
 │   ├── annotations.cds  ← All Fiori Elements annotations (List Report + Object Page)
+│   ├── mcp.cds          ← MCP (AI agent) annotations — @gavdi/cap-mcp
 │   ├── bp-service.js    ← Node.js handler (BEFORE/AFTER/ON hooks)
 │   └── server.js        ← /health endpoint for CF health-check
 │
@@ -35,6 +36,7 @@ bp-cap-fiori/
 ├── package.json       ← CAP deps + mocked auth config for local dev
 ├── xs-security.json   ← XSUAA scopes + 3 role templates
 ├── mta.yaml           ← CF deploy: approuter + srv + db-deployer + services
+├── .nvmrc             ← Pins Node LTS via nvm (scoped to this project only)
 └── CLAUDE.md          ← This file
 ```
 
@@ -155,6 +157,30 @@ Two follow-on issues, both fixed:
 
 Also added `@Common.SideEffects: { TargetEntities: ['_it'] }` on both actions so a Fiori client refetches the whole BP (incl. the virtual `statusCriticality`) after a successful call, instead of showing stale cached values.
 
+### Step 9 — Add MCP Server (AI Agent Access)
+
+Integrated [`@gavdi/cap-mcp`](https://github.com/gavdilabs/cap-mcp-plugin) so MCP-compatible AI agents (e.g. Claude Desktop) can query and act on Business Partner data. Exposed at `http://localhost:4004/mcp` (health at `/mcp/health`), configured via `cds.mcp` in `package.json` with `auth: "inherit"` — MCP requests authenticate the same way OData requests do and inherit the exact same `@restrict` role checks (a role with no grant for a tool never even sees it in `tools/list`).
+
+`@mcp` annotations live in a new dedicated file, `srv/mcp.cds`, mirroring how `annotations.cds` isolates `@UI` concerns from the service definition:
+
+- `BusinessPartners` → resource template with OData query support (`filter`/`orderby`/`select`/`top`/`skip`/`expand`) plus `query`/`get` wrapper tools. Deliberately **not** wrapped for create/update — it's draft-enabled with a multi-step Fiori edit flow that a raw MCP tool call can't safely replicate.
+- `BPCategories`/`BPStatuses` → small static resources for resolving coded values.
+- `blockBP`/`unblockBP` → tools with `elicit: ['confirm']`, so the plugin requires the calling client to support confirmation before executing a state-changing action.
+- `getBPSummary` → read-only tool.
+- Field-level `@mcp.hint` annotations explain coded values (`categoryCode` 1/2/3, `statusCode` ACTIVE/BLOCKED) an LLM can't infer from the field name alone.
+
+**This plugin requires CDS 9 and Express 5**, which cascaded into a real upgrade chain: `@sap/cds` 8→9, `express` 4→5, `@sap/xssec` 3→4, `@cap-js/sqlite` 1→2 (the 1.x line's `@cap-js/db-service` peer-caps `@sap/cds` at `<9`), `eslint` 8→10. Two genuine breaking changes surfaced and were fixed, not worked around:
+
+1. **`@sap/cds-fiori@1.x` breaks under Express 5** — it builds Fiori-preview mock routes with a bare `'*'` wildcard, which Express 5's stricter `path-to-regexp` rejects at server startup (`PathError: Missing parameter name`). Fixed by bumping to `@sap/cds-fiori@^2.3.0`, which detects the Express major version and uses `*splat` instead.
+2. **The persisted `db/dev.sqlite` went schema-stale** — CDS 9 added a `DraftMessages` column to the internal `DraftAdministrativeData` draft table. A DB file deployed under CDS 8 fails every draft operation with `no such column: DraftMessages` until redeployed against the current model: `rm -f db/dev.sqlite* && npx cds deploy`. **Do this after any major `@sap/cds` version bump.**
+
+The newer native `better-sqlite3` (pulled in by `@cap-js/sqlite@2.x`) also needed a current Node — the system Node here was too old to have a prebuilt binary, and source-compiling failed (`node-gyp` needs Python's `distutils`, removed in 3.12+). Rather than upgrade the system-wide Node (would affect every other project on the machine) or patch the system Python, installed `nvm` and pinned a Node LTS via `.nvmrc`, scoped to this project only:
+
+```bash
+nvm install   # reads .nvmrc
+nvm use
+```
+
 ---
 
 ## Running Locally
@@ -188,6 +214,8 @@ When the browser shows a Basic Auth popup, enter any of the above usernames with
 | `http://localhost:4004/api/v1/bp/BusinessPartners` | Business Partners list |
 | `http://localhost:4004/api/v1/bp/getBPSummary()` | Aggregate summary function |
 | `http://localhost:4004/health` | Health check (CF) |
+| `http://localhost:4004/mcp` | MCP server endpoint (AI agent access) |
+| `http://localhost:4004/mcp/health` | MCP health check |
 
 ### Quick curl tests
 
